@@ -33,32 +33,13 @@
 using namespace LAMMPS_NS;
 
 enum{SCALAR,VECTOR,ARRAY};
-/*TODO
-  store coupling coefficients in a C++ map : std::map<m_inds, ccs>
-  m_inds: indices for m combinations  (e.g. all m quantum number combinations for l1,l2=1,1)
-  1 : -1,1
-  2 :  0,0
-  3 :  1,-1
-  m_inds = { 1, 2, 3}
-  ccs: generalized clebsch-gordan coefficients for the m combinations allowed by a set l
-  for the example above:
-  ccs = { -1, 1, -1 }
 
-  I believe a map is needed because these become harder to store in arrays with high-order ACE descriptors.
-  for a rank 6 descriptor with l1,l2,l3,l4,l5,l6 = 2, there are thousands of m combinations. Storing in an
-  array of dimension [m1][m2][m3][m4][m5][m6] becomes cumbersome (and we may reach a limit for array dimensions
-  for higher ranked descriptors eventually). If the order of the ccs dont exactly match up exactly with the correct m
-  combination, then the descriptor will be incorrect.
-
-  being able to access the coupling coefficients by index, or a more descriptive key=("%d,%d,%d,%d", l1,l2,m1,m2)
-  would be ideal. The coupling coefficients are accessed multiple times for different descriptors characterized by
-  n1,n2,l1,l2 -provided that l1 and l2 are the same between descriptors with different n1 and n2.
-*/
 ComputePACE::ComputePACE(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg), cutsq(nullptr), list(nullptr), pace(nullptr),
   paceall(nullptr), pace_peratom(nullptr), radelem(nullptr), wjelem(nullptr),
   basis_set(nullptr),ace(nullptr),map(nullptr),cg(nullptr)
 {
+  // MEG I need to add the pace_bik up here ^ ...
 
   array_flag = 1;
   extarray = 0;
@@ -85,7 +66,9 @@ ComputePACE::ComputePACE(LAMMPS *lmp, int narg, char **arg) :
   //printf("basis set rank 1 mu 0 %d \n" , basis_set->total_basis_size_rank1[0]);
   //printf("basis set rank 1 mu 1 %d \n" , basis_set->total_basis_size_rank1[1]); //!$ not initialized!
   //TODO verify that checks for elements inside cutoff is correct inside the ace_evaluator code itself
-  /*
+  /* KEEP THIS
+  // Check on the neighbor lists to confirm that these aren't 0 in the neighbor list (might be handled in the ace_evaluator code)
+  // If uncommented, it will give a LAMMPS exception in current form
   double cuti;
   double radelemall = 0.5;
   memory->create(cutsq,ntypes+1,ntypes+1,"pace:cutsq");
@@ -135,6 +118,12 @@ ComputePACE::ComputePACE(LAMMPS *lmp, int narg, char **arg) :
   ndims_peratom = ndims_force;
   size_peratom = ndims_peratom*nperdim*atom->ntypes;
 
+
+  printf(" -----HELLO - megcheck: ComputePACE::ComputePACE(LAMMPS....) -------------- \n");
+  printf("ncoeff, size_array_rows,size_array_cols: %d %d %d \n",ncoeff, size_array_rows,size_array_cols);
+  printf("ndims_peratom, nperdim,size_peratom, natoms: %d %d %d %d\n",ndims_peratom,nperdim,size_peratom,natoms);
+  printf(" ------------- end megcheck -------------- \n");
+
   nmax = 0;
 }
 
@@ -155,7 +144,7 @@ void ComputePACE::init()
 {
   if (force->pair == nullptr)
     error->all(FLERR,"Compute pace requires a pair style be defined");
-  //printf("cutmax  %f  cutforce %f\n", cutmax, force->pair->cutforce);
+  printf("cutmax  %f  cutforce %f\n", cutmax, force->pair->cutforce);
   if (cutmax > force->pair->cutforce)
     error->all(FLERR,"Compute pace cutoff is longer than pairwise cutoff");
 
@@ -231,7 +220,7 @@ void ComputePACE::compute_array()
 
   for (int irow = 0; irow < size_array_rows; irow++)
     for (int icoeff = 0; icoeff < size_array_cols; icoeff++)
-      pace[irow][icoeff] = 0.0;
+      pace[irow][icoeff] = 0.0; 
 
   // clear local peratom array
 
@@ -239,6 +228,8 @@ void ComputePACE::compute_array()
     for (int icoeff = 0; icoeff < size_peratom; icoeff++) {
       pace_peratom[i][icoeff] = 0.0;
     }
+  // MEG check dim values, size_peratom, etc.
+    //   size_peratom = ndims_peratom*nperdim*atom->ntypes;
 
   // invoke full neighbor list (will copy or build if necessary)
 
@@ -301,7 +292,7 @@ void ComputePACE::compute_array()
         for(int mu = 0; mu < basis_set->nelements; mu++){
           if (mu != -1) {
             if (mu == ik - 1) {
-              //printf("ik, mu: %d, %d \n" , ik,mu);
+              // printf("ik, mu: %d, %d \n" , ik,mu);
               map[ik] = mu;
               ace->element_type_mapping(ik) = mu; // set up LAMMPS atom type to ACE species  mapping for ace evaluator
             }
@@ -313,6 +304,10 @@ void ComputePACE::compute_array()
       //TODO turn into for loop over species types for multicomponent implementation
       ace->compute_atom(i, atom->x, atom->type, list->numneigh[i], list->firstneigh[i]);
       Array1D<DOUBLE_TYPE> Bs =ace->B_all;
+
+      // MEG
+      // printf("this is where Biks is defined (line ~315)");
+      Array2D<DOUBLE_TYPE> Biks =ace->B_ik;
 
       //TODO get jnum for atom i
       //  & fix neighbour_list lookup (sn
@@ -342,12 +337,16 @@ void ComputePACE::compute_array()
           pacedj[func_ind+zoffset] -= fz_dB;
           }
         }
-      //printf("basis size compute %d \n", n_r1 + n_rp);
       for (int icoeff = 0; icoeff < n_r1 + n_rp; icoeff++){
       //for (int icoeff = typeoffset_local; icoeff < typeoffset_local + n_r1 + n_rp; icoeff++){
 	    pace[0][k++] += Bs(icoeff);
-	    //pace[0][icoeff] += Bs(icoeff);
-        //printf("atom, coeffidx, coeff: %d, %d, %f \n", i, icoeff, Bs(icoeff));
+      // MEG
+      // pace[0][k++] += Biks(icoeff);
+      // printf("this is where Biks will be (line ~355)\n");
+	    
+      //pace[0][icoeff] += Bs(icoeff);
+      int lmp_elem_type = 1 + typeoffset_local/504;
+        printf("lmp_type, atom, coeffidx, coeff: %d, %d, %d, %f \n", lmp_elem_type, i, icoeff, Bs(icoeff));
       }
       delete ace;
     }

@@ -82,6 +82,9 @@ public:
 
     Array1D<DOUBLE_TYPE> B_all = Array1D<DOUBLE_TYPE>("B_all"); //rank 1+ invariants shape B(ncoeffs)
 
+    // MEG
+    Array2D<DOUBLE_TYPE> B_ik = Array2D<DOUBLE_TYPE>("B_ik"); //rank 1+ invariants shape B(ncoeffs)
+
     DOUBLE_TYPE e_atom = 0; ///< energy of current atom, including core-repulsion
 
     /**

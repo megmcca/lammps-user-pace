@@ -138,6 +138,7 @@ ACECTildeEvaluator::compute_atom(int i, DOUBLE_TYPE **x, const SPECIES_TYPE *typ
         throw std::invalid_argument("ACECTildeEvaluator: basis set is not assigned");
     }
     per_atom_calc_timer.start();
+    printf("\n\n\n\nHIII!!!!!!!!!!!!!!!\n\n\n\n");
 #ifdef PRINT_MAIN_STEPS
     printf("\n ATOM: ind = %d r_norm=(%f, %f, %f)\n",i, x[i][0], x[i][1], x[i][2]);
 #endif
